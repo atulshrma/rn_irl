@@ -1,0 +1,1368 @@
+# -*- coding: utf-8 -*-
+"""
+Copyright (c) Lodve Berre and NTNU Technology Transfer AS 2024.
+
+This file is part of Really Nice IRL.
+
+Really Nice IRL is free software: you can redistribute it and/or modify it
+under the terms of the GNU Affero General Public License as published by the
+Free Software Foundation, either version 3 of the License, or (at your option)
+ any later version.
+
+Really Nice IRL is distributed in the hope that it will be useful, but
+WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY
+or FITNESS FOR A PARTICULAR PURPOSE.
+See the GNU General Public License for more details.
+
+You should have received a copy of the GNU Affero General Public License
+along with Really Nice IRL. If not, see:
+<https://www.gnu.org/licenses/agpl-3.0.html>.
+"""
+
+from dataclasses import dataclass
+from datetime import datetime
+from sqlalchemy import create_engine, desc, func, Column, Integer, Text
+from sqlalchemy import update, ForeignKey
+from sqlalchemy.orm import declarative_base, sessionmaker, mapped_column
+from sqlalchemy.orm.attributes import InstrumentedAttribute
+from sqlalchemy.orm import relationship
+
+import bcrypt
+import pandas as pd
+import streamlit as st
+
+
+Base = declarative_base()
+
+rights_map = {"Read Only": 0,
+              "Read/Write": 1,
+              "Read/Write/Create": 2,
+              "Administrator": 9}
+
+
+class SerializerMixin:
+    """
+    This class is used to make other classes iterable and enable easy
+    conversion from database queries to Pandas Dataframes via dictionaries.
+    """
+
+    def __init__(self, data):
+
+        for field in self.__table__.columns:
+
+            if getattr(field, 'name'):
+                setattr(self, field.name, data[field.name])
+
+    def as_dict(self):
+        return {column.name: getattr(self, column.name)
+                for column in self.__table__.columns}
+
+    def to_dict(self):
+        return {column.name: getattr(self, column.name)
+                for column in self.__table__.columns}
+
+
+class IRL(Base, SerializerMixin):
+    """
+    Wrapper class around IRL texts and values in the database.
+    """
+
+    __tablename__ = 'IRL'
+
+    Level = Column(Integer, primary_key=True)
+    IRLType = Column(Text(3))
+    Description = Column(Text)
+    Aspects = Column(Text)
+    StartupValue = Column(Integer)
+    LicenseValue = Column(Integer)
+
+
+class IRLAssessment(Base, SerializerMixin):
+    """
+    Wrapper class around the IRL Data table in the database.
+    Contains all the historical assessment values for all projects.
+    """
+
+    __tablename__ = 'IRL Data'
+
+    id = Column(Integer, primary_key=True)
+    project_no = Column(Integer)
+    project_name = Column(Text)
+    project_leader_id = mapped_column(ForeignKey('Users.user_id'))
+    assessment_date = Column(Text(10))
+    crl = Column(Integer)
+    trl = Column(Integer)
+    brl = Column(Integer)
+    iprl = Column(Integer)
+    tmrl = Column(Integer)
+    frl = Column(Integer)
+    crl_notes = Column(Text)
+    trl_notes = Column(Text)
+    brl_notes = Column(Text)
+    iprl_notes = Column(Text)
+    tmrl_notes = Column(Text)
+    frl_notes = Column(Text)
+    crl_target = Column(Integer)
+    trl_target = Column(Integer)
+    brl_target = Column(Integer)
+    iprl_target = Column(Integer)
+    tmrl_target = Column(Integer)
+    frl_target = Column(Integer)
+    crl_target_lead = Column(Text(64))
+    trl_target_lead = Column(Text(64))
+    brl_target_lead = Column(Text(64))
+    iprl_target_lead = Column(Text(64))
+    tmrl_target_lead = Column(Text(64))
+    frl_target_lead = Column(Text(64))
+    crl_target_duedate = Column(Text(10))
+    trl_target_duedate = Column(Text(10))
+    brl_target_duedate = Column(Text(10))
+    iprl_target_duedate = Column(Text(10))
+    tmrl_target_duedate = Column(Text(10))
+    frl_target_duedate = Column(Text(10))
+
+    def __str__(self):
+        return str(self.project_no) + " " + self.project_name
+
+    def __repr__(self):
+        return str(self.project_no) + " " + self.project_name
+
+    def _getDate(self):
+        """
+        Convenience method to convert from datetime.date to ISO standard
+        date string which we store in the database.
+
+        Returns
+        -------
+        date : str
+            ISO standard date (YYYY-MM-DD).
+        """
+
+        date = datetime.now()
+        date = '%d-%02d-%02d' % (date.year, date.month, date.day)
+
+        return date
+
+    def calc_license_value(self):
+        """
+        Method to calculate ballpark license value based on IRL levels and
+        the corresponding values in the database.
+        WARNING: NOT CALIBRATED OUT OF THE BOX!
+        VALUES MUST BE SET ACCORDING TO LOCAL CURRENCY AND EXPERIENCE!
+
+        Returns
+        -------
+        value : int
+             Sum of license values set in database for the IRL.
+        """
+
+        engine = create_engine(st.secrets.db_details.db_path)
+        Base.metadata.create_all(bind=engine)
+        Session = sessionmaker(bind=engine)
+        session = Session()
+        value = session.query(func.sum(IRL.LicenseValue)).filter(
+                ((IRL.IRLType == 'CRL') & (IRL.Level == self.crl)) |
+                ((IRL.IRLType == 'TRL') & (IRL.Level == self.trl)) |
+                ((IRL.IRLType == 'BRL') & (IRL.Level == self.brl)) |
+                ((IRL.IRLType == 'IPRL') & (IRL.Level == self.iprl)) |
+                ((IRL.IRLType == 'TMRL') & (IRL.Level == self.tmrl)) |
+                ((IRL.IRLType == 'FRL') & (IRL.Level == self.frl)))\
+            .scalar()
+        session.close()
+        engine.dispose()
+
+        return value
+
+    def calc_license_target_value(self):
+        """
+        Method to calculate ballpark license value based on IRL levels and
+        the corresponding target values in the database.
+        WARNING: NOT CALIBRATED OUT OF THE BOX!
+        VALUES MUST BE SET ACCORDING TO LOCAL CURRENCY AND EXPERIENCE!
+
+        Returns
+        -------
+        value : int
+             Sum of license values set in database for the target IRL.
+        """
+
+        engine = create_engine(st.secrets.db_details.db_path)
+        Base.metadata.create_all(bind=engine)
+        Session = sessionmaker(bind=engine)
+        session = Session()
+        value = session.query(func.sum(IRL.LicenseValue)).filter(
+                ((IRL.IRLType == 'CRL') & (IRL.Level == self.crl_target)) |
+                ((IRL.IRLType == 'TRL') & (IRL.Level == self.trl_target)) |
+                ((IRL.IRLType == 'BRL') & (IRL.Level == self.brl_target)) |
+                ((IRL.IRLType == 'IPRL') & (IRL.Level == self.iprl_target)) |
+                ((IRL.IRLType == 'TMRL') & (IRL.Level == self.tmrl_target)) |
+                ((IRL.IRLType == 'FRL') & (IRL.Level == self.frl_target)))\
+            .scalar()
+        session.close()
+        engine.dispose()
+
+        return value
+
+    def calc_startup_value(self):
+
+        engine = create_engine(st.secrets.db_details.db_path)
+        Base.metadata.create_all(bind=engine)
+        Session = sessionmaker(bind=engine)
+        session = Session()
+        value = session.query(func.sum(IRL.StartupValue)).filter(
+                ((IRL.IRLType == 'CRL') & (IRL.Level == self.crl)) |
+                ((IRL.IRLType == 'TRL') & (IRL.Level == self.trl)) |
+                ((IRL.IRLType == 'BRL') & (IRL.Level == self.brl)) |
+                ((IRL.IRLType == 'IPRL') & (IRL.Level == self.iprl)) |
+                ((IRL.IRLType == 'TMRL') & (IRL.Level == self.tmrl)) |
+                ((IRL.IRLType == 'FRL') & (IRL.Level == self.frl)))\
+            .scalar()
+        session.close()
+        engine.dispose()
+
+        return value
+
+    def calc_startup_target_value(self):
+
+        engine = create_engine(st.secrets.db_details.db_path)
+        Base.metadata.create_all(bind=engine)
+        Session = sessionmaker(bind=engine)
+        session = Session()
+        value = session.query(func.sum(IRL.StartupValue)).filter(
+                ((IRL.IRLType == 'CRL') & (IRL.Level == self.crl_target)) |
+                ((IRL.IRLType == 'TRL') & (IRL.Level == self.trl_target)) |
+                ((IRL.IRLType == 'BRL') & (IRL.Level == self.brl_target)) |
+                ((IRL.IRLType == 'IPRL') & (IRL.Level == self.iprl_target)) |
+                ((IRL.IRLType == 'TMRL') & (IRL.Level == self.tmrl_target)) |
+                ((IRL.IRLType == 'FRL') & (IRL.Level == self.frl_target)))\
+            .scalar()
+        session.close()
+        engine.dispose()
+
+        return value
+
+    def insert(self):
+
+        self.assessment_date = self._getDate()
+        engine = create_engine(st.secrets.db_details.db_path)
+        Base.metadata.create_all(bind=engine)
+        Session = sessionmaker()
+        Session.configure(bind=engine)
+        session = Session()
+
+        exists = (session.query(IRLAssessment).filter(
+            IRLAssessment.project_no == self.project_no).first() is not None)
+        error = None
+
+        if exists:
+
+            error = "Project already exists in the database!"
+
+        else:
+
+            session.add(self)
+            session.commit()
+
+        session.close()
+        engine.dispose()
+
+        return error
+
+    def update(self):
+
+        engine = create_engine(st.secrets.db_details.db_path)
+        Base.metadata.create_all(bind=engine)
+        Session = sessionmaker()
+        Session.configure(bind=engine)
+        session = Session()
+        mapped_values = {}
+        date = self._getDate()
+
+        # If the date on record is today, we overwrite.
+        if date == self.assessment_date:
+
+            for item in IRLAssessment.__dict__.items():
+
+                field_name = item[0]
+                field_type = item[1]
+                is_column = isinstance(field_type, InstrumentedAttribute)
+
+                if is_column:
+
+                    mapped_values[field_name] = getattr(self, field_name)
+
+            session.query(IRLAssessment).filter(
+                IRLAssessment.id == self.id).update(mapped_values)
+
+        # If not, we insert a new assessment and keep the historical one.
+        else:
+
+            # This is probably not the best way to do this. But hey, it works.
+            new_irl = IRLAssessment()
+            new_irl.project_no = self.project_no
+            new_irl.project_name = self.project_name
+            new_irl.project_leader_id = self.project_leader_id
+            new_irl.assessment_date = date
+            new_irl.crl = self.crl
+            new_irl.trl = self.trl
+            new_irl.brl = self.brl
+            new_irl.iprl = self.iprl
+            new_irl.tmrl = self.tmrl
+            new_irl.frl = self.frl
+            new_irl.crl_notes = self.crl_notes
+            new_irl.trl_notes = self.trl_notes
+            new_irl.brl_notes = self.brl_notes
+            new_irl.iprl_notes = self.iprl_notes
+            new_irl.tmrl_notes = self.tmrl_notes
+            new_irl.frl_notes = self.frl_notes
+            new_irl.crl_target = self.crl_target
+            new_irl.trl_target = self.trl_target
+            new_irl.brl_target = self.brl_target
+            new_irl.iprl_target = self.iprl_target
+            new_irl.tmrl_target = self.tmrl_target
+            new_irl.frl_target = self.frl_target
+            new_irl.crl_target_lead = self.crl_target_lead
+            new_irl.trl_target_lead = self.trl_target_lead
+            new_irl.brl_target_lead = self.brl_target_lead
+            new_irl.iprl_target_lead = self.iprl_target_lead
+            new_irl.tmrl_target_lead = self.tmrl_target_lead
+            new_irl.frl_target_lead = self.frl_target_lead
+            new_irl.crl_target_duedate = self.crl_target_duedate
+            new_irl.trl_target_duedate = self.trl_target_duedate
+            new_irl.brl_target_duedate = self.brl_target_duedate
+            new_irl.iprl_target_duedate = self.iprl_target_duedate
+            new_irl.tmrl_target_duedate = self.tmrl_target_duedate
+            new_irl.frl_target_duedate = self.frl_target_duedate
+
+            session.add(new_irl)
+
+        session.commit()
+        session.close()
+        engine.dispose()
+
+    def __eq__(self, other):
+
+        if isinstance(other, IRLAssessment):
+
+            if other.id == self.id:
+
+                return True
+
+        return False
+
+
+class User(Base, SerializerMixin):
+    """
+    Rights: 0: read-only, #1: read/write, #2, read/write/create, #9: admin
+    Active: # 0: inactive, #1: active
+    """
+    __tablename__ = 'Users'
+
+    user_id = Column(Integer, primary_key=True)
+    actual_name = Column(Text)
+    username = Column(Text(100), unique=True)
+    password = Column(Text(100))
+    rights = Column(Integer)
+    active = Column(Integer)
+    org_id = Column(Integer)
+    fac_id = Column(Integer)
+    dep_id = Column(Integer)
+
+    def __hash__(self):
+        return int(self.user_id)
+
+    def __str__(self):
+        return str(self.actual_name) + " (" + self.username + ")"
+
+    def __repr__(self):
+        return str(self.actual_name) + " (" + self.username + ")"
+
+
+class UserSettings(Base):
+
+    __tablename__ = 'User Settings'
+
+    id = Column(Integer, primary_key=True)
+    user_id = mapped_column(ForeignKey('Users.user_id'))
+    smooth_irl = Column(Integer)
+    filter_on_user = Column(Integer)
+    remember_project = Column(Integer)
+    last_project_no = Column(Integer)
+    plot_target_levels = Column(Integer)
+    ascending_irl = Column(Integer)
+    ap_table_view = Column(Integer)
+    dark_mode = Column(Integer)
+
+    def update(self):
+
+        engine = create_engine(st.secrets.db_details.db_path)
+        Base.metadata.create_all(bind=engine)
+        Session = sessionmaker()
+        Session.configure(bind=engine)
+        session = Session()
+        mapped_values = {}
+
+        for item in UserSettings.__dict__.items():
+
+            field_name = item[0]
+            field_type = item[1]
+            is_column = isinstance(field_type, InstrumentedAttribute)
+
+            if is_column:
+
+                mapped_values[field_name] = getattr(self, field_name)
+
+        session.query(UserSettings).filter(UserSettings.id == self.id).\
+            update(mapped_values)
+        session.commit()
+        session.close()
+        engine.dispose()
+
+
+class SystemSettings(Base):
+
+    __tablename__ = 'System Settings'
+
+    id = Column(Integer, primary_key=True)
+    logo_uri = Column(Text)
+    logo_uri_dark = Column(Text)
+    logo_uri_light = Column(Text)
+    force_email_users = Column(Integer)
+    owner_org_id = mapped_column(ForeignKey('Organisations.org_id'))
+
+    def update(self):
+
+        engine = create_engine(st.secrets.db_details.db_path)
+        Base.metadata.create_all(bind=engine)
+        Session = sessionmaker()
+        Session.configure(bind=engine)
+        session = Session()
+        mapped_values = {}
+
+        for item in SystemSettings.__dict__.items():
+
+            field_name = item[0]
+            field_type = item[1]
+            is_column = isinstance(field_type, InstrumentedAttribute)
+
+            if is_column:
+
+                mapped_values[field_name] = getattr(self, field_name)
+
+        session.query(SystemSettings).filter(SystemSettings.id == self.id).\
+            update(mapped_values)
+        session.commit()
+        session.close()
+        engine.dispose()
+
+
+class Organisation(Base):
+
+    __tablename__ = 'Organisations'
+
+    org_id = Column(Integer, primary_key=True)
+    org_name = Column(Text)
+    active = Column(Integer)
+
+    def __str__(self):
+        return self.org_name
+
+    def __repr__(self):
+        return self.org_name
+
+
+class Faculty(Base):
+
+    __tablename__ = 'Faculties'
+
+    fac_id = Column(Integer, primary_key=True)
+    fac_name = Column(Text)
+    org_id = mapped_column(ForeignKey('Organisations.org_id'))
+    active = Column(Integer)
+
+    def __str__(self):
+        return self.fac_name
+
+    def __repr__(self):
+        return self.fac_name
+
+
+class Department(Base):
+
+    __tablename__ = 'Departments'
+
+    dep_id = Column(Integer, primary_key=True)
+    dep_name = Column(Text)
+    fac_id = mapped_column(ForeignKey('Faculties.fac_id'))
+    active = Column(Integer)
+
+    def __str__(self):
+        return self.dep_name
+
+    def __repr__(self):
+        return self.dep_name
+
+
+class ProjectTeam(Base, SerializerMixin):
+
+    __tablename__ = "Project Teams"
+
+    id = Column(Integer, primary_key=True)
+    project_id = Column(Integer)
+    user_id = Column(Integer, ForeignKey('Users.user_id'))
+    project_rights = Column(Integer, ForeignKey('Permission Levels.level'))
+    active = Column(Integer)
+
+    user = relationship("User", backref="ProjectTeam")
+
+    def update(self):
+
+        engine = create_engine(st.secrets.db_details.db_path)
+        Base.metadata.create_all(bind=engine)
+        Session = sessionmaker()
+        Session.configure(bind=engine)
+        session = Session()
+        uv = {'project_rights': self.project_rights, 'active': self.active}
+        session.query(ProjectTeam).filter(
+               ProjectTeam.id == self.id).update(uv)
+        session.commit()
+        session.close()
+        engine.dispose()
+
+
+@dataclass
+class PermissionLevel(Base):
+
+    __tablename__ = "Permission Levels"
+
+    level = Column(Integer, primary_key=True)
+    level_text = Column(Text)
+
+    def __hash__(self):
+        return int(self.level)
+
+    def __repr__(self):
+
+        return self.level_text
+
+    def __str__(self):
+
+        return self.level_text
+
+
+class ActionPoint(Base):
+
+    __tablename__ = "Action Points"
+
+    id = Column(Integer, primary_key=True)
+    assessment_id = Column(Integer, ForeignKey('IRL Data.id'))
+    irl_type = Column(Integer, ForeignKey('IRL.IRLType'))
+    action_point = Column(Text)
+    user_id = Column(Integer, ForeignKey('Users.user_id'))
+    due_date = Column(Text(10))
+    progress = Column(Integer)
+    comment = Column(Text)
+
+    user = relationship("User", backref="ActionPoint")
+
+    def __repr__(self):
+
+        ap_txt = "Action point: " + self.action_point
+        ap_txt += "\tResponsible: " + self.user.actual_name
+        ap_txt += "\tProgress: " + str(self.progress) + " %"
+        ap_txt += "\tDue date: " + self.due_date
+        return ap_txt
+
+    def __str__(self):
+
+        return self.__repr__()
+
+
+"""
+IRL methods.
+"""
+
+
+def get_irl_table(irl_type, ascending=False):
+    """
+    Convenience method for grabbing IRL levels and descriptions from DB.
+
+    Parameters
+    ----------
+    irl_type : string
+        One of 'CRL', 'TRL', 'BRL', 'IPRL', 'TRL' 'FRL'.
+    ascending : bool
+        Returns table in ascdescending IRL level order if True,
+        returns table in descending IRL level order if False (default).
+
+    Returns
+    -------
+    irl_table : Pandas DataFrame
+        DESCRIPTION.
+
+    """
+    assert irl_type in ['CRL', 'TRL', 'BRL', 'IPRL', 'TMRL', 'FRL']
+
+    engine = create_engine(st.secrets.db_details.db_path)
+    Base.metadata.create_all(bind=engine)
+    Session = sessionmaker(bind=engine)
+    session = Session()
+
+    if ascending:
+
+        irl_orm = session.query(IRL).\
+            filter(IRL.IRLType == irl_type).\
+            order_by(IRL.Level).all()
+    else:
+
+        irl_orm = session.query(IRL).\
+            filter(IRL.IRLType == irl_type).\
+            order_by(desc(IRL.Level)).all()
+
+    session.close()
+    engine.dispose()
+    irl_df = pd.DataFrame([item.to_dict() for item in irl_orm])
+
+    return irl_df
+
+
+def get_irl_license_value_matrix():
+
+    df_dict = {'Level': list(range(1, 10, 1))}
+    irl_types = ['CRL', 'TRL', 'BRL', 'IPRL', 'TMRL', 'FRL']
+    engine = create_engine(st.secrets.db_details.db_path)
+    Base.metadata.create_all(bind=engine)
+    Session = sessionmaker(bind=engine)
+    session = Session()
+
+    for irl_type in irl_types:
+
+        irl_values = session.query(IRL.LicenseValue).\
+            filter(IRL.IRLType == irl_type).\
+            order_by(IRL.Level).all()
+        irl_values = list(map(lambda irl_value: irl_value[0], irl_values))
+        df_dict[irl_type] = irl_values
+
+    session.close()
+    engine.dispose()
+    irl_df = pd.DataFrame(df_dict)
+
+    return irl_df
+
+
+def get_irl_startup_value_matrix():
+
+    df_dict = {'Level': list(range(1, 10, 1))}
+    irl_types = ['CRL', 'TRL', 'BRL', 'IPRL', 'TMRL', 'FRL']
+    engine = create_engine(st.secrets.db_details.db_path)
+    Base.metadata.create_all(bind=engine)
+    Session = sessionmaker(bind=engine)
+    session = Session()
+
+    for irl_type in irl_types:
+
+        irl_values = session.query(IRL.StartupValue).\
+            filter(IRL.IRLType == irl_type).\
+            order_by(IRL.Level).all()
+        irl_values = list(map(lambda irl_value: irl_value[0], irl_values))
+        df_dict[irl_type] = irl_values
+
+    session.close()
+    engine.dispose()
+    irl_df = pd.DataFrame(df_dict)
+
+    return irl_df
+
+
+def update_license_values(edited_rows):
+
+    engine = create_engine(st.secrets.db_details.db_path)
+    Base.metadata.create_all(bind=engine)
+    Session = sessionmaker()
+    Session.configure(bind=engine)
+    session = Session()
+
+    for row in edited_rows.keys():
+
+        for irl, value in edited_rows[row].items():
+
+            session.query(IRL).filter(IRL.Level == row+1,
+                                      IRL.IRLType == irl).\
+                update({'LicenseValue': value})
+
+    session.commit()
+    session.close()
+    engine.dispose()
+
+
+def update_startup_values(edited_rows):
+
+    engine = create_engine(st.secrets.db_details.db_path)
+    Base.metadata.create_all(bind=engine)
+    Session = sessionmaker()
+    Session.configure(bind=engine)
+    session = Session()
+
+    for row in edited_rows.keys():
+
+        for irl, value in edited_rows[row].items():
+
+            session.query(IRL).filter(IRL.Level == row+1,
+                                      IRL.IRLType == irl).\
+                update({'StartupValue': value})
+
+    session.commit()
+    session.close()
+    engine.dispose()
+
+
+"""
+User methods.
+"""
+
+
+def add_user(new_user, password):
+    """
+
+    Parameters
+    ----------
+    username : TYPE
+        DESCRIPTION.
+    password : TYPE
+        DESCRIPTION.
+    rights : TYPE
+        DESCRIPTION.
+
+    Returns
+    -------
+    bool
+        DESCRIPTION.
+
+    """
+    engine = create_engine(st.secrets.db_details.db_path)
+    Base.metadata.create_all(bind=engine)
+    Session = sessionmaker(bind=engine)
+    session = Session()
+    password = password.encode('utf-8')
+    salt = bcrypt.gensalt()
+    hashed_password = bcrypt.hashpw(password, salt).decode('utf-8')
+
+    # Check if user doesn't already exist.
+    exists = session.query(User).filter_by(username=new_user.username).first()
+
+    if exists:
+
+        return None
+
+    else:
+
+        new_user.password = hashed_password
+        session.add(new_user)
+        session.commit()
+        new_user = session.query(User).filter(
+            User.username == new_user.username).first()
+        new_user_settings = UserSettings(user_id=new_user.user_id,
+                                         smooth_irl=1,
+                                         filter_on_user=1,
+                                         remember_project=1,
+                                         plot_target_levels=1,
+                                         ascending_irl=1,
+                                         ap_table_view=0,
+                                         dark_mode=1)
+        session.add(new_user_settings)
+        session.commit()
+        session.refresh(new_user)
+        session.close()
+        engine.dispose()
+
+        return new_user
+
+
+def get_users(active=True):
+    """
+    Get a list of all users in the database.
+
+    Returns
+    -------
+    users : TYPE
+        DESCRIPTION.
+
+    """
+    engine = create_engine(st.secrets.db_details.db_path)
+    Base.metadata.create_all(bind=engine)
+    Session = sessionmaker(bind=engine)
+    session = Session()
+    users = session.query(User).filter(User.active == int(active)).all()
+    session.close()
+    engine.dispose()
+
+    return users
+
+
+def get_userId(username):
+    """
+    Get the user ID of a specific username.
+
+    Parameters
+    ----------
+    username : string
+        DESCRIPTION.
+
+    Returns
+    -------
+    user_id : integer
+        DESCRIPTION.
+
+    """
+
+    engine = create_engine(st.secrets.db_details.db_path)
+    Base.metadata.create_all(bind=engine)
+    Session = sessionmaker(bind=engine)
+    session = Session()
+
+    user_id = None
+    db_user = session.query(User).filter(User.username == username).first()
+
+    if db_user is not None:
+
+        user_id = db_user.id
+
+    session.close()
+    engine.dispose()
+
+    return user_id
+
+
+def validate_user(user, password):
+    """
+
+    Parameters
+    ----------
+    user : TYPE
+        DESCRIPTION.
+    password : TYPE
+        DESCRIPTION.
+
+    Returns
+    -------
+    db_user : TYPE
+        DESCRIPTION.
+
+    """
+
+    engine = create_engine(st.secrets.db_details.db_path)
+    Base.metadata.create_all(bind=engine)
+    Session = sessionmaker(bind=engine)
+    session = Session()
+
+    password = password.encode('utf-8')
+    db_user = session.query(User).filter(User.username == user).first()
+    verified = (db_user and bcrypt.checkpw(
+        password, db_user.password.encode('utf-8')))
+    session.close()
+    engine.dispose()
+
+    if not verified:
+
+        db_user = None
+
+    return db_user
+
+
+def change_user_password(user, password):
+    """
+    Change user password.
+
+    Parameters
+    ----------
+    user : base.User
+        DESCRIPTION.
+    password : string
+        DESCRIPTION.
+
+    Returns
+    -------
+    bool
+        True if change was successful, false if not.
+
+    """
+
+    engine = create_engine(st.secrets.db_details.db_path)
+    Base.metadata.create_all(bind=engine)
+    Session = sessionmaker(bind=engine)
+    session = Session()
+
+    password = password.encode('utf-8')
+    salt = bcrypt.gensalt()
+    hashed_password = bcrypt.hashpw(password, salt).decode('utf-8')
+    stmt = (update(User).where(
+        User.user_id == user.user_id).values(password=hashed_password))
+
+    try:
+
+        session.execute(stmt)
+        success = True
+
+    except BaseException:
+
+        success = False
+
+    session.commit()
+    session.close()
+    engine.dispose()
+
+    return success
+
+
+def change_user_status(users, active):
+    """
+    Change user status.
+
+    Parameters
+    ----------
+    users : list of user names
+        List of users to update.
+    active : bool
+        Set user active status. We don't delete users for historical resasons.
+
+    Returns
+    -------
+    bool
+        True if change was successful, false if not.
+
+    """
+
+    active = int(active)
+    engine = create_engine(st.secrets.db_details.db_path)
+    Base.metadata.create_all(bind=engine)
+    Session = sessionmaker(bind=engine)
+    session = Session()
+
+    try:
+
+        session.query(User).filter(
+            User.username.in_(users)).update({'active': active})
+        success = True
+
+    except BaseException:
+
+        success = False
+
+    session.commit()
+    session.close()
+    engine.dispose()
+
+    return success
+
+
+def get_user(username):
+    """
+
+    Parameters
+    ----------
+    username : string
+        Must be a valid username.
+
+    Returns
+    -------
+    user : base.User
+        DESCRIPTION.
+
+    """
+    engine = create_engine(st.secrets.db_details.db_path)
+    Base.metadata.create_all(bind=engine)
+    Session = sessionmaker(bind=engine)
+    session = Session()
+    user = session.query(User).filter(User.username == username).first()
+    session.close()
+    engine.dispose()
+
+    return user
+
+
+def get_user_settings(user_id):
+    """
+
+
+    Parameters
+    ----------
+    user : TYPE
+        DESCRIPTION.
+
+    Returns
+    -------
+    user_settings : TYPE
+        DESCRIPTION.
+
+    """
+
+    engine = create_engine(st.secrets.db_details.db_path)
+    Base.metadata.create_all(bind=engine)
+    Session = sessionmaker(bind=engine)
+    session = Session()
+    user_settings = session.query(
+        UserSettings).filter(UserSettings.user_id == user_id).first()
+    session.close()
+    engine.dispose()
+
+    return user_settings
+
+
+"""
+System settings methods.
+"""
+
+
+def get_system_settings():
+    """
+    Convenience method for grabbing system settings from DB.
+
+    Parameters
+    ----------
+    None
+
+    Returns
+    -------
+    irl_table : Pandas DataFrame
+        DESCRIPTION.
+
+    """
+    engine = create_engine(st.secrets.db_details.db_path)
+    Base.metadata.create_all(bind=engine)
+    Session = sessionmaker(bind=engine)
+    session = Session()
+    sys_settings = session.query(
+        SystemSettings).filter(SystemSettings.id == 1).first()
+    session.close()
+    engine.dispose()
+
+    return sys_settings
+
+
+"""
+Project methods.
+"""
+
+
+def get_projects(user_id=None):
+    """
+    Get IRL assessments for all projects.
+    If user is specified, returns only projects where the specified user is
+    an active part of the project team.
+    """
+
+    engine = create_engine(st.secrets.db_details.db_path)
+    Base.metadata.create_all(bind=engine)
+    Session = sessionmaker(bind=engine)
+    session = Session()
+
+    if user_id is None:
+
+        irl_data = session.query(IRLAssessment).order_by(
+            func.max(IRLAssessment.assessment_date)).group_by(
+                IRLAssessment.project_no).all()
+
+    else:
+
+        irl_data = session.query(IRLAssessment).order_by(
+            func.max(IRLAssessment.assessment_date)).group_by(
+                IRLAssessment.project_no).filter(
+                    (ProjectTeam.user_id == user_id) &
+                    (ProjectTeam.active == 1) &
+                    (IRLAssessment.project_no == ProjectTeam.project_id)).all()
+
+    session.close()
+    engine.dispose()
+
+    return irl_data
+
+
+def get_project_history(project_id):
+    """
+    Get IRL assessments for all projects.
+    If user is specified, returns only projects where the specified user is
+    project leader.
+    """
+
+    engine = create_engine(st.secrets.db_details.db_path)
+    Base.metadata.create_all(bind=engine)
+    Session = sessionmaker(bind=engine)
+    session = Session()
+
+    irl_data = session.query(IRLAssessment).order_by(
+            IRLAssessment.assessment_date).where(
+                    IRLAssessment.project_no == project_id).all()
+
+    session.close()
+    engine.dispose()
+
+    return irl_data
+
+
+def get_project_rights(project_id, user_id):
+
+    engine = create_engine(st.secrets.db_details.db_path)
+    Base.metadata.create_all(bind=engine)
+    Session = sessionmaker(bind=engine)
+    session = Session()
+    rights = session.query(ProjectTeam).where(
+                    (ProjectTeam.project_id == project_id) &
+                    (ProjectTeam.user_id == user_id)).first()
+    session.close()
+    engine.dispose()
+
+    return rights.project_rights
+
+
+def get_project_team(project_id):
+
+    engine = create_engine(st.secrets.db_details.db_path)
+    Base.metadata.create_all(bind=engine)
+    Session = sessionmaker(bind=engine)
+    session = Session()
+    team = session.query(ProjectTeam).order_by(
+            ProjectTeam.user_id).where(
+                    (ProjectTeam.project_id == project_id) &
+                    (ProjectTeam.user_id == User.user_id)).all()
+    members = []
+    user_objs = []
+
+    for member in team:
+
+        # This is hackish and the order matters as we have the active flag
+        # for both users and team members. The latter overwrites the former.
+        row = member.user.to_dict()
+        row.update(member.to_dict())
+        members.append(row)
+        user_objs.append(member.user)
+
+    team_df = pd.DataFrame(members)
+    team_df['team_obj'] = team
+    team_df['user_obj'] = user_objs
+    session.close()
+    engine.dispose()
+
+    return team_df
+
+
+def get_orgs():
+    """
+    Return all active organisations in the database.
+    TODO: Implement active
+
+    Returns
+    -------
+    orgs : TYPE
+        DESCRIPTION.
+
+    """
+    engine = create_engine(st.secrets.db_details.db_path)
+    Base.metadata.create_all(bind=engine)
+    Session = sessionmaker(bind=engine)
+    session = Session()
+
+    orgs = session.query(Organisation).order_by(
+        Organisation.org_name).where(
+            Organisation.active == 1).all()
+    session.close()
+    engine.dispose()
+
+    return orgs
+
+
+def get_facs(org):
+    """
+    Return all active organisations in the database.
+
+    Returns
+    -------
+    orgs : TYPE
+        DESCRIPTION.
+
+    """
+    engine = create_engine(st.secrets.db_details.db_path)
+    Base.metadata.create_all(bind=engine)
+    Session = sessionmaker(bind=engine)
+    session = Session()
+
+    facs = session.query(Faculty).order_by(
+        Faculty.fac_name).where(
+            Faculty.org_id == org.org_id,
+            Faculty.active == 1).all()
+    session.close()
+    engine.dispose()
+
+    return facs
+
+
+def get_deps(fac):
+    """
+    Return all active organisations in the database.
+
+    Returns
+    -------
+    orgs : TYPE
+        DESCRIPTION.
+
+    """
+    engine = create_engine(st.secrets.db_details.db_path)
+    Base.metadata.create_all(bind=engine)
+    Session = sessionmaker(bind=engine)
+    session = Session()
+
+    deps = session.query(Department).order_by(
+        Department.dep_name).where(
+            Department.fac_id == fac.fac_id,
+            Department.active == 1).all()
+    session.close()
+    engine.dispose()
+
+    return deps
+
+
+def get_permission_levels(user=None):
+    """
+    Get a list of all permission leveles in the database.
+
+    Returns
+    -------
+    list : PermissionLevel
+        DESCRIPTION.
+
+    """
+    engine = create_engine(st.secrets.db_details.db_path)
+    Base.metadata.create_all(bind=engine)
+    Session = sessionmaker(bind=engine)
+    session = Session()
+
+    if user is None:
+
+        pls = session.query(PermissionLevel).all()
+
+    else:
+
+        pls = session.query(PermissionLevel).where(
+            PermissionLevel.level <= user.rights).all()
+
+    session.close()
+    engine.dispose()
+
+    return pls
+
+
+def get_permission_level_map():
+    """
+    Get a mapping from permission level texts to permission level ids.
+    This is needed because I can't find a way to use the PermissionLevel
+    object inside st.selectbox in st.data_editor. It is probably feasible,
+    which would be ideal, but I don't know how to do it right now.
+
+    Returns
+    -------
+    pm_map : dict
+        Dictionary with permission level labels as keys and level ID as values.
+
+    """
+    engine = create_engine(st.secrets.db_details.db_path)
+    Base.metadata.create_all(bind=engine)
+    Session = sessionmaker(bind=engine)
+    session = Session()
+    pms = session.query(PermissionLevel).all()
+    session.close()
+    engine.dispose()
+    pm_map = {}
+
+    for pm in pms:
+
+        pm_map[pm.level_text] = pm.level
+
+    return pm_map
+
+
+def add_project_team(project_no, team):
+
+    engine = create_engine(st.secrets.db_details.db_path)
+    Base.metadata.create_all(bind=engine)
+    Session = sessionmaker()
+    Session.configure(bind=engine)
+    session = Session()
+
+    for user in team:
+
+        team_member = ProjectTeam()
+        team_member.project_id = project_no
+        team_member.user_id = user.user_id
+        team_member.project_rights = user.rights
+        team_member.active = 1
+        session.add(team_member)
+
+    session.commit()
+
+    session.close()
+    engine.dispose()
+
+
+""" Organisation, department and faculty methods."""
+
+
+def add_org(org_name):
+
+    engine = create_engine(st.secrets.db_details.db_path)
+    Base.metadata.create_all(bind=engine)
+    Session = sessionmaker()
+    Session.configure(bind=engine)
+    session = Session()
+    new_org = Organisation()
+    new_org.org_name = org_name
+    new_org.active = True
+    session.add(new_org)
+    session.commit()
+    new_org = session.query(Organisation).filter(
+        Organisation.org_name == org_name).first()
+    session.close()
+    engine.dispose()
+
+    return new_org.org_id
+
+
+def add_fac(org_id, fac_name):
+
+    engine = create_engine(st.secrets.db_details.db_path)
+    Base.metadata.create_all(bind=engine)
+    Session = sessionmaker()
+    Session.configure(bind=engine)
+    session = Session()
+    new_fac = Faculty()
+    new_fac.org_id = org_id
+    new_fac.fac_name = fac_name
+    new_fac.active = True
+    session.add(new_fac)
+    session.commit()
+    new_fac = session.query(Faculty).filter(
+        (Faculty.org_id == org_id) & (Faculty.fac_name == fac_name)).first()
+    session.close()
+    engine.dispose()
+
+    return new_fac.fac_id
+
+
+def add_dep(fac_id, dep_name):
+
+    engine = create_engine(st.secrets.db_details.db_path)
+    Base.metadata.create_all(bind=engine)
+    Session = sessionmaker()
+    Session.configure(bind=engine)
+    session = Session()
+    new_dep = Department()
+    new_dep.fac_id = fac_id
+    new_dep.dep_name = dep_name
+    new_dep.active = True
+    session.add(new_dep)
+    session.commit()
+    new_dep = session.query(Department).filter(
+        (Department.fac_id == fac_id) &
+        (Department.dep_name == dep_name)).first()
+    session.close()
+    engine.dispose()
+
+    return new_dep.dep_id
