@@ -72,6 +72,8 @@ def on_init_system():
 
     """
 
+    fac_id = None
+    dep_id = None
     pw1 = ss.new_pw1
     pw2 = ss.new_pw2
 
@@ -82,14 +84,13 @@ def on_init_system():
         return
 
     permissions = ss.new_permissions.level
-
     org_id = base.add_org(ss.new_user_org)
 
-    if ss.new_user_fac is not None:
+    if ss.new_user_fac not in (None, ""):
 
         fac_id = base.add_fac(org_id, ss.new_user_fac)
 
-    if ss.new_user_dep is not None:
+    if ss.new_user_dep not in (None, ""):
 
         dep_id = base.add_dep(fac_id, ss.new_user_dep)
 
@@ -183,6 +184,20 @@ def on_add_new_user():
 
 
 def irl_color(irl):
+    """
+    Fecth the correct color to use for background based on irl level.
+
+    Parameters
+    ----------
+    irl : Integer
+        IRL Value from 1-9.
+
+    Returns
+    -------
+    bg_color : TYPE
+        DESCRIPTION.
+
+    """
 
     color = IRL_COLOR_MAP[irl]
     bg_color = f'background-color: {color};'
@@ -240,17 +255,18 @@ def make_grid(cols, rows):
     return grid
 
 
-def make_action_points(prefix, project_data, irl_callback, expanded=False):
+def make_action_points(prefix, project_data, ap_cb, expanded=False):
 
-    disabled = (irl_callback is None)
     # Target levels and notes.
     header = "Targets and action points per %s:"
     header = header % project_data.assessment_date
-    action_points = st.expander(header, expanded=expanded)
     irl_cats = ['CRL', 'TRL', 'BRL', 'IPRL', 'TMRL', 'FRL']
 
-    with action_points:
+    with st.form("ap_form_" + prefix, border=False):
 
+        st.checkbox("Show target levels in plot",
+                    project_data.plot_targets,
+                    key=prefix + "_plot_targets")
         ats = st.tabs(irl_cats)
 
         for at, irl_cat in zip(ats, irl_cats):
@@ -260,6 +276,7 @@ def make_action_points(prefix, project_data, irl_callback, expanded=False):
             with at:
 
                 at_col1, at_col2, at_col3 = st.columns(3)
+                team = base.get_project_team(project_data.project_no)
 
                 with at_col1:
 
@@ -267,34 +284,206 @@ def make_action_points(prefix, project_data, irl_callback, expanded=False):
                     st.selectbox("%s Target Level" % irl_cat,
                                  options=[1, 2, 3, 4, 5, 6, 7, 8, 9],
                                  key='%s_%s_target' % (prefix, low_cat),
-                                 index=index,
-                                 on_change=irl_callback,
-                                 disabled=disabled)
+                                 index=index)
 
                 with at_col2:
+                    lead = getattr(project_data,
+                                   "%s_target_lead" % low_cat)
+                    key = "%s_%s_target_lead" % (prefix, low_cat)
+                    options = team.username.to_list()
 
-                    lead = getattr(project_data, '%s_target_lead' % low_cat)
-                    st.text_input("Lead:",
-                                  key='%s_%s_target_lead' % (prefix, low_cat),
-                                  value=lead,
-                                  disabled=disabled)
+                    if lead is not None:
+
+                        lead = options.index(lead)
+
+                    st.selectbox("Lead:",
+                                 options=options,
+                                 index=lead,
+                                 key=key)
 
                 with at_col3:
 
-                    date = getattr(project_data, '%s_target_duedate' % low_cat)
+                    date = getattr(project_data,
+                                   "%s_target_duedate" % low_cat)
                     st.date_input("Due date:",
                                   key='%s_%s_duedate' % (prefix, low_cat),
                                   format="YYYY-MM-DD",
-                                  value=utils.dbdate2datetime(date),
-                                  disabled=disabled)
+                                  value=utils.dbdate2datetime(date))
 
-                st.text_area("%s Action points:" % irl_cat,
-                             value=getattr(project_data, '%s_notes' % low_cat),
-                             key='%s_%s_notes' % (prefix, low_cat),
-                             disabled=disabled)
+                st.text_area("%s general comments:" % irl_cat,
+                             value=getattr(project_data,
+                                           '%s_notes' % low_cat),
+                             key='%s_%s_notes' % (prefix, low_cat))
+
+                aps = base.get_action_points(project_data.id, irl_cat)
+                ss["%s_%s_df" % (prefix, low_cat)] = aps
+                cc = {"action_point":
+                      st.column_config.TextColumn(
+                          "Action Point",
+                          help="Action Point",
+                          width="medium",
+                          disabled=False,
+                          required=True),
+                      "username":
+                      st.column_config.SelectboxColumn(
+                          "Responsible",
+                          help="Project member responsible for action point",
+                          width="small",
+                          options=team.username.to_list(),
+                          disabled=False,
+                          required=True,
+                          ),
+                      "progress":
+                      st.column_config.SelectboxColumn(
+                          "Progress",
+                          options=list(range(0, 110, 10)),
+                          help="Action point progress in percents",
+                          width="small",
+                          default=0),
+                      "due_date":
+                      st.column_config.DateColumn(
+                          "Due date",
+                          help="Action pooint due date",
+                          width="small",
+                          format="YYYY-MM-DD",
+                          disabled=False,
+                          required=True),
+                      "comment":
+                      st.column_config.TextColumn(
+                          "Comment",
+                          help="Comments to action point progress",
+                          width="medium",
+                          disabled=False,
+                          required=False)}
+                st.data_editor(aps,
+                               column_order=['action_point',
+                                             'username',
+                                             'progress',
+                                             'due_date',
+                                             'comment'],
+                               column_config=cc,
+                               use_container_width=True,
+                               hide_index=True,
+                               num_rows="dynamic",
+                               key='%s_%s_aps' % (prefix, low_cat))
+
+        st.form_submit_button("Update action points",
+                              on_click=ap_cb)
 
 
-def show_action_points(project_data, expanded=False):
+def show_action_points(prefix, project_data, ap_cb, expanded=False):
+
+    # Target levels and notes.
+    header = "Targets and action points per %s:"
+    header = header % project_data.assessment_date
+    irl_cats = ['CRL', 'TRL', 'BRL', 'IPRL', 'TMRL', 'FRL']
+
+    ats = st.tabs(irl_cats)
+
+    for at, irl_cat in zip(ats, irl_cats):
+
+        low_cat = irl_cat.lower()
+
+        with at:
+
+            at_col1, at_col2, at_col3 = st.columns(3)
+            team = base.get_project_team(project_data.project_no)
+
+            with at_col1:
+
+                index = getattr(project_data, '%s_target' % low_cat)-1
+                st.selectbox("%s Target Level" % irl_cat,
+                             options=[1, 2, 3, 4, 5, 6, 7, 8, 9],
+                             key='%s_%s_target' % (prefix, low_cat),
+                             index=index,
+                             disabled=True)
+
+            with at_col2:
+
+                lead = getattr(project_data,
+                               "%s_target_lead" % low_cat)
+                key = "%s_%s_target_lead" % (prefix, low_cat)
+                options = team.username.to_list()
+
+                if lead is not None:
+
+                    lead = options.index(lead)
+
+                st.selectbox("Lead:",
+                             options=options,
+                             key=key,
+                             index=lead,
+                             disabled=True)
+
+            with at_col3:
+
+                date = getattr(project_data,
+                               "%s_target_duedate" % low_cat)
+                st.date_input("Due date:",
+                              key='%s_%s_duedate' % (prefix, low_cat),
+                              format="YYYY-MM-DD",
+                              value=utils.dbdate2datetime(date),
+                              disabled=True)
+
+            st.text_area("%s general comments:" % irl_cat,
+                         value=getattr(project_data,
+                                       '%s_notes' % low_cat),
+                         key='%s_%s_notes' % (prefix, low_cat),
+                         disabled=True)
+
+            aps = base.get_action_points(project_data.id, irl_cat)
+            ss["%s_%s_df" % (prefix, low_cat)] = aps
+            cc = {"action_point":
+                  st.column_config.TextColumn(
+                      "Action Point",
+                      help="Action Point",
+                      width="medium",
+                      disabled=False,
+                      required=True),
+                  "username":
+                  st.column_config.SelectboxColumn(
+                      "Responsible",
+                      help="Project member responsible for action point",
+                      width="small",
+                      options=team.username.to_list(),
+                      disabled=False,
+                      required=True,
+                      ),
+                  "progress":
+                  st.column_config.SelectboxColumn(
+                      "Progress",
+                      options=list(range(0, 110, 10)),
+                      help="Action point progress in percents",
+                      width="small",
+                      default=0),
+                  "due_date":
+                  st.column_config.DateColumn(
+                      "Due date",
+                      help="Action pooint due date",
+                      width="small",
+                      format="YYYY-MM-DD",
+                      disabled=False,
+                      required=True),
+                  "comment":
+                  st.column_config.TextColumn(
+                      "Comment",
+                      help="Comments to action point progress",
+                      width="medium",
+                      disabled=False,
+                      required=False)}
+            st.dataframe(aps,
+                         column_order=['action_point',
+                                       'username',
+                                       'progress',
+                                       'due_date',
+                                       'comment'],
+                         column_config=cc,
+                         use_container_width=True,
+                         hide_index=True,
+                         key='%s_%s_aps' % (prefix, low_cat))
+
+
+def show_action_points_table(project_data, expanded=False):
 
     text = "Targets and action points per %s:" % project_data.assessment_date
 
@@ -523,8 +712,6 @@ def add_user():
 
 def init_system():
 
-    # BUGFIX: Need to reset an enironmental variable after adding.
-    # Can currently only add one user at the time.
     btn_text = "Initialise system and get started!"
     sys_settings = base.get_system_settings()
 
@@ -738,7 +925,7 @@ def change_user_status():
             st.rerun()
 
 
-def add_organisation():
+def add_organisation(callback):
 
     st.subheader("Add new organisation")
     org_c, fac_c = st.columns(2)
@@ -758,14 +945,37 @@ def add_organisation():
                      key='new_fac',
                      help="Will add one faculty per line")
 
-    st.button("Add new organisation")
+    st.button("Add new organisation",
+              key="btn_add_org",
+              on_click=callback)
 
 
-def add_departments():
+def add_faculties(callback):
 
-    st.subheader("Add new department(s)")
+    st.subheader("Add new faculties")
+    org_c, fac_c = st.columns(2)
+
+    with org_c:
+
+        st.selectbox("Organisation",
+                     options=base.get_orgs(),
+                     key='select_orgs')
+
+    with fac_c:
+
+        st.text_area("Faculties",
+                     key="new_facs",
+                     help="Will add one faculty per line")
+
+    st.button("Add new faculties",
+              key="btn_add_fac",
+              on_click=callback)
+
+
+def add_departments(callback):
+
+    st.subheader("Add new departments")
     org_c, fac_c, dep_c = st.columns(3)
-    status = ss.get("add_new_dep_status", None)
 
     with org_c:
 
@@ -790,10 +1000,13 @@ def add_departments():
 
     with dep_c:
 
-        st.text_area("Department(s)",
-                     help="Will add one faculty per line")
+        st.text_area("Departments",
+                     key="new_deps",
+                     help="Will add one deparatment per line")
 
-    st.button("Add new department(s)")
+    st.button("Add new departments",
+              key="btn_add_dep",
+              on_click=callback)
 
 
 def irl_explainer():
@@ -1105,7 +1318,7 @@ def edit_project_team(users, edit_cb, team_change_cb):
 
         if ss.get('team_df', None) is None:
 
-            ss.team_df = base.get_project_team(project.project_no)
+            ss.team_df = base.get_project_team(project.project_no, False)
 
         team = ss.team_df
         all_perms = base.get_permission_levels()
@@ -1184,6 +1397,77 @@ def edit_project_team(users, edit_cb, team_change_cb):
                   on_click=team_change_cb)
 
 
+def change_project_status():
+
+    with st.form("change_project_status", border=False):
+
+        de, re = st.columns(2)
+
+        with de:
+
+            st.subheader("Deactivate project(s):")
+            active_projs = base.get_users()
+            active_projs = [proj.project_no for proj in active_projs]
+            st.multiselect("Select projects to deactivate",
+                           active_projs,
+                           placeholder="Select projects",
+                           key="deactivate_projects")
+
+        with re:
+
+            st.subheader("Reactivate project(s):")
+            inactive_projs = base.get_projects(False)
+            inactive_projs = [proj.project_no for proj in inactive_projs]
+            st.multiselect("Select projects to reactivate",
+                           inactive_projs,
+                           placeholder="Select projects",
+                           key="reactivate_projs")
+
+        change_user_status = st.form_submit_button("Update user status")
+
+        if change_user_status:
+
+            des, res = st.columns(2)
+
+            if len(ss.deactivate_users) > 0:
+
+                success = base.change_user_status(
+                    ss.deactivate_users,
+                    False)
+
+                with des:
+
+                    if success:
+
+                        st.success("Selected user(s) detctivated!")
+
+                    else:
+
+                        st.error("Could not deactivate user(s)!")
+
+            if len(ss.reactivate_users) > 0:
+
+                success = base.change_user_status(
+                    ss.reactivate_users,
+                    True)
+
+                with res:
+
+                    if success:
+
+                        st.success("Selected user(s) reactivated!")
+
+                    else:
+
+                        st.error("Could not reactivate user(s)!")
+
+            with st.spinner("Updating database..."):
+
+                time.sleep(1)
+
+            st.rerun()
+
+
 def user_settings(user_settings, handler):
 
     st.checkbox("Dark mode for plots",
@@ -1198,11 +1482,6 @@ def user_settings(user_settings, handler):
                       diffrent IRL values to give what some people\
                       including the author thinks is more esthetically\
                       pleasing look")
-    st.checkbox("Plot target levels",
-                value=ss.user_settings.plot_target_levels,
-                key='plot_target_levels',
-                help="When selected, will plot target IRL values along\
-                      with the current IRL values.")
     st.checkbox("Filter projects on active user",
                 value=user_settings.filter_on_user,
                 key='filter_on_user',

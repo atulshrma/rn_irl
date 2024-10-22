@@ -31,6 +31,7 @@ import bcrypt
 import pandas as pd
 import streamlit as st
 
+import utils
 
 Base = declarative_base()
 
@@ -120,6 +121,7 @@ class IRLAssessment(Base, SerializerMixin):
     iprl_target_duedate = Column(Text(10))
     tmrl_target_duedate = Column(Text(10))
     frl_target_duedate = Column(Text(10))
+    plot_targets = Column(Integer)
 
     def __str__(self):
         return str(self.project_no) + " " + self.project_name
@@ -268,7 +270,7 @@ class IRLAssessment(Base, SerializerMixin):
 
         return error
 
-    def update(self):
+    def update(self, overwrite=False):
 
         engine = create_engine(st.secrets.db_details.db_path)
         Base.metadata.create_all(bind=engine)
@@ -279,7 +281,7 @@ class IRLAssessment(Base, SerializerMixin):
         date = self._getDate()
 
         # If the date on record is today, we overwrite.
-        if date == self.assessment_date:
+        if overwrite or date == self.assessment_date:
 
             for item in IRLAssessment.__dict__.items():
 
@@ -333,6 +335,7 @@ class IRLAssessment(Base, SerializerMixin):
             new_irl.iprl_target_duedate = self.iprl_target_duedate
             new_irl.tmrl_target_duedate = self.tmrl_target_duedate
             new_irl.frl_target_duedate = self.frl_target_duedate
+            new_irl.plot_targets = self.plot_targets
 
             session.add(new_irl)
 
@@ -388,7 +391,6 @@ class UserSettings(Base):
     filter_on_user = Column(Integer)
     remember_project = Column(Integer)
     last_project_no = Column(Integer)
-    plot_target_levels = Column(Integer)
     ascending_irl = Column(Integer)
     ap_table_view = Column(Integer)
     dark_mode = Column(Integer)
@@ -529,6 +531,12 @@ class ProjectTeam(Base, SerializerMixin):
         session.close()
         engine.dispose()
 
+    def __str__(self):
+        return self.user.actual_name
+
+    def __repr__(self):
+        return self.user.actual_name
+
 
 @dataclass
 class PermissionLevel(Base):
@@ -550,27 +558,83 @@ class PermissionLevel(Base):
         return self.level_text
 
 
-class ActionPoint(Base):
+class ActionPoint(Base, SerializerMixin):
 
     __tablename__ = "Action Points"
 
-    id = Column(Integer, primary_key=True)
+    ap_id = Column(Integer, primary_key=True)
     assessment_id = Column(Integer, ForeignKey('IRL Data.id'))
-    irl_type = Column(Integer, ForeignKey('IRL.IRLType'))
+    irl_type = Column(Text(4))
     action_point = Column(Text)
-    user_id = Column(Integer, ForeignKey('Users.user_id'))
+    responsible = Column(Integer, ForeignKey('Users.user_id'))
     due_date = Column(Text(10))
     progress = Column(Integer)
     comment = Column(Text)
 
     user = relationship("User", backref="ActionPoint")
 
+    def copy(self, ass_id):
+        """
+        Makes a copy of the action point, but assigns it to a new assessment.
+
+        Parameters
+        ----------
+        ass_id : Integer
+            The IRL Assessment ID to attach the action point to.
+
+        Returns
+        -------
+        None.
+
+        """
+
+        new_self = ActionPoint()
+        new_self.assessment_id = ass_id
+        new_self.irl_type = self.irl_type
+        new_self.action_point = self.action_point
+        new_self.responsible = self.responsible
+        new_self.due_date = self.due_date
+        new_self.progress = self.progress
+        new_self.comment = self.comment
+        new_self.insert()
+
+    def insert(self):
+
+        engine = create_engine(st.secrets.db_details.db_path)
+        Base.metadata.create_all(bind=engine)
+        Session = sessionmaker()
+        Session.configure(bind=engine)
+        session = Session()
+        session.add(self)
+        session.commit()
+        session.close()
+        engine.dispose()
+
+    def update(self):
+
+        engine = create_engine(st.secrets.db_details.db_path)
+        Base.metadata.create_all(bind=engine)
+        Session = sessionmaker()
+        Session.configure(bind=engine)
+        session = Session()
+        uv = {'action_point': self.action_point,
+              'responsible': self.responsible,
+              'due_date': self.due_date,
+              'progress': self.progress,
+              'comment': self.comment}
+        session.query(ActionPoint).filter(
+                ActionPoint.ap_id == self.ap_id).update(uv)
+        session.commit()
+        session.close()
+        engine.dispose()
+
     def __repr__(self):
 
-        ap_txt = "Action point: " + self.action_point
-        ap_txt += "\tResponsible: " + self.user.actual_name
+        ap_txt = self.irl_type
+        ap_txt += " action point: " + self.action_point
         ap_txt += "\tProgress: " + str(self.progress) + " %"
         ap_txt += "\tDue date: " + self.due_date
+        ap_txt += "\tComment: " + self.comment
         return ap_txt
 
     def __str__(self):
@@ -581,6 +645,52 @@ class ActionPoint(Base):
 """
 IRL methods.
 """
+
+
+def get_irl(irl_ass_id):
+
+    engine = create_engine(st.secrets.db_details.db_path)
+    Base.metadata.create_all(bind=engine)
+    Session = sessionmaker(bind=engine)
+    session = Session()
+    irl_ass = session.query(IRLAssessment).filter(
+        (IRLAssessment.id == irl_ass_id)).first()
+    session.close()
+    engine.dispose()
+
+    return irl_ass
+
+
+def irl_ass_changed(irl_ass):
+    """
+    Check if the assessment is currently different from the one saved in
+    the database.
+
+    Parameters
+    ----------
+    irl_ass_id : TYPE
+        DESCRIPTION.
+    irl_ass : TYPE
+        DESCRIPTION.
+
+    Returns
+    -------
+    Bool
+
+    """
+    db_irl_ass = get_irl(irl_ass.id)
+    attrs = ('crl', 'trl', 'brl', 'iprl', 'tmrl', 'frl')
+
+    for attr in attrs:
+
+        db_attr = getattr(db_irl_ass, attr)
+        irl_attr = getattr(irl_ass, attr)
+
+        if db_attr != irl_attr:
+
+            return True
+
+    return False
 
 
 def get_irl_table(irl_type, ascending=False):
@@ -765,7 +875,6 @@ def add_user(new_user, password):
                                          smooth_irl=1,
                                          filter_on_user=1,
                                          remember_project=1,
-                                         plot_target_levels=1,
                                          ascending_irl=1,
                                          ap_table_view=0,
                                          dark_mode=1)
@@ -799,7 +908,7 @@ def get_users(active=True):
     return users
 
 
-def get_userId(username):
+def get_user_id(username):
     """
     Get the user ID of a specific username.
 
@@ -825,7 +934,7 @@ def get_userId(username):
 
     if db_user is not None:
 
-        user_id = db_user.id
+        user_id = db_user.user_id
 
     session.close()
     engine.dispose()
@@ -1114,16 +1223,47 @@ def get_project_rights(project_id, user_id):
     return rights.project_rights
 
 
-def get_project_team(project_id):
+def get_project_team(project_id, active=True):
+    """
+    Convenience method for fetching the project team.
+
+    Parameters
+    ----------
+    project_id : integer
+        The unique project id from the database.
+    active : bool, optional
+        If True, only returns active project members.
+        If False, will return all members that have been part of the project
+        team at any point in its history.
+        The default is True.
+
+    Returns
+    -------
+    team_df : Pandas DataFrame
+        DESCRIPTION.
+
+    """
 
     engine = create_engine(st.secrets.db_details.db_path)
     Base.metadata.create_all(bind=engine)
     Session = sessionmaker(bind=engine)
     session = Session()
-    team = session.query(ProjectTeam).order_by(
-            ProjectTeam.user_id).where(
-                    (ProjectTeam.project_id == project_id) &
-                    (ProjectTeam.user_id == User.user_id)).all()
+
+    if active is True:
+
+        team = session.query(ProjectTeam).order_by(
+                ProjectTeam.user_id).where(
+                        (ProjectTeam.project_id == project_id) &
+                        (ProjectTeam.user_id == User.user_id) &
+                        (ProjectTeam.active == active)).all()
+
+    else:
+
+        team = session.query(ProjectTeam).order_by(
+                ProjectTeam.user_id).where(
+                        (ProjectTeam.project_id == project_id) &
+                        (ProjectTeam.user_id == User.user_id)).all()
+
     members = []
     user_objs = []
 
@@ -1366,3 +1506,152 @@ def add_dep(fac_id, dep_name):
     engine.dispose()
 
     return new_dep.dep_id
+
+
+"""
+Action points methods.
+"""
+
+
+def get_ap(ap_id):
+    """
+    Get the action point object corresponding to the action point id.
+
+    Parameters
+    ----------
+    ap_id : Integer
+        Unique action point database ID.
+
+    Returns
+    -------
+    ap : ActionPoint
+        DESCRIPTION.
+
+    """
+    engine = create_engine(st.secrets.db_details.db_path)
+    Base.metadata.create_all(bind=engine)
+    Session = sessionmaker(bind=engine)
+    session = Session()
+    ap = session.query(ActionPoint).filter(ActionPoint.ap_id == ap_id).first()
+    session.close()
+    engine.dispose()
+
+    return ap
+
+
+def get_action_points(irl_ass_id, irl_type=None):
+    """
+    Get all action points related to the project IRL assessment.
+
+    Parameters
+    ----------
+    irl_ass_id : Integer
+        IRL Assessment ID
+    irl_type : String, optional
+        If specified returns only action points for the indicated IRL type.
+        Valid values are CRL, TRL, BRL, IPRL, TMRL, FRL.
+        The default is None.
+
+    Returns
+    -------
+    aps_df : Pandas DataFrame
+        Pandas DataFrame containing all action points.
+        If no action points exists, returns empty dataframe with correct
+        columns.
+    """
+    if irl_type is not None:
+
+        assert irl_type in ('CRL', 'TRL', 'BRL', 'IPRL', 'TMRL', 'FRL')
+
+    engine = create_engine(st.secrets.db_details.db_path)
+    Base.metadata.create_all(bind=engine)
+    Session = sessionmaker(bind=engine)
+    session = Session()
+
+    if irl_type is None:
+
+        aps = session.query(ActionPoint).filter(
+            ActionPoint.assessment_id == irl_ass_id).all()
+
+    else:
+
+        aps = session.query(ActionPoint).filter(
+            (ActionPoint.assessment_id == irl_ass_id) &
+            (ActionPoint.irl_type == irl_type)).all()
+
+    points = []
+    user_objs = []
+
+    for ap in aps:
+
+        # This is hackish and the order matters as we have the active flag
+        # for both users and team members. The latter overwrites the former.
+        row = ap.user.to_dict()
+        row.update(ap.to_dict())
+        points.append(row)
+        user_objs.append(ap.user)
+
+    aps_df = pd.DataFrame(points)
+
+    if len(points) > 0:
+
+        aps_df['aps'] = points
+        aps_df['user_obj'] = user_objs
+        aps_df['due_date'] = utils.dbdates2datetimes(aps_df['due_date'])
+
+    session.close()
+    engine.dispose()
+
+    # If no action points exists, return empty dataframe but with correct cols.
+    if len(aps_df.index) == 0:
+
+        columns = ['user_id', 'actual_name', 'username', 'password', 'rights',
+                   'active', 'org_id', 'fac_id', 'dep_id', 'id',
+                   'assessment_id', 'irl_type', 'action_point', 'responsible',
+                   'due_date', 'progress', 'comment', 'aps', 'user_obj']
+        aps_df = pd.DataFrame(columns=columns)
+
+    return aps_df
+
+
+def ap_completed(irl_ass_id):
+
+    engine = create_engine(st.secrets.db_details.db_path)
+    Base.metadata.create_all(bind=engine)
+    Session = sessionmaker(bind=engine)
+    session = Session()
+
+    aps = session.query(ActionPoint).filter(
+            ActionPoint.assessment_id == irl_ass_id).all()
+    completion = session.query(func.sum(ActionPoint.progress)).filter(
+                (ActionPoint.assessment_id == irl_ass_id)).scalar()
+    session.close()
+    engine.dispose()
+
+    completed = (len(aps)*100 == completion)
+
+    return completed
+
+
+def copy_aps(old_ass_id, new_ass_id):
+    """
+    Copy unfinished action points from an old assessment to a new one.
+
+    Parameters
+    ----------
+    old_ass_id : TYPE
+        DESCRIPTION.
+    new_ass_id : TYPE
+        DESCRIPTION.
+
+    Returns
+    -------
+    None.
+
+    """
+
+    old_aps = get_action_points(old_ass_id)
+
+    for old_ap in old_aps:
+
+        old_ap.copy(new_ass_id)

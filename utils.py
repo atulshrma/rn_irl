@@ -46,6 +46,17 @@ def dbdate2datetime(date):
     return datetime(yyyy, mm, dd)
 
 
+def dbdates2datetimes(date_list):
+
+    datetimes = []
+
+    for dbdate in date_list:
+
+        datetimes.append(dbdate2datetime(dbdate))
+
+    return datetimes
+
+
 def get_IRL_data(user_id=None):
 
     # Fetch from database only when and if we need to do so.

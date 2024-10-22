@@ -43,7 +43,7 @@ IRL_CMAP = mc.LinearSegmentedColormap.from_list("IRL_CMAP",
                                                  (1.0000, "#37953B")])
 
 
-def plot_irl(irl_data, smooth=False, plot_targets=False, dark_mode=True):
+def plot_irl(irl_data, smooth=False, dark_mode=True, targets=False):
 
     if dark_mode:
 
@@ -160,7 +160,7 @@ def plot_irl(irl_data, smooth=False, plot_targets=False, dark_mode=True):
     xs.append(xs[0])
     ys.append(ys[0])
 
-    if plot_targets:
+    if irl_data.plot_targets or targets:
 
         for irl_t_val, irl_cat in zip(irl_targets, irl_cats):
 
@@ -234,7 +234,7 @@ def plot_irl(irl_data, smooth=False, plot_targets=False, dark_mode=True):
         irl_t.set_face_color('w')
         irl_t.set_color('w')
 
-    if plot_targets:
+    if irl_data.plot_targets or targets:
 
         ax.add_patch(irl_t)
         ax.imshow(R,

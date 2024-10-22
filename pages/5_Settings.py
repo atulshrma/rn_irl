@@ -37,7 +37,7 @@ def on_project_team_edit_change():
     """
 
     project = ss.project_team_to_edit
-    ss.team_df = base.get_project_team(project.project_no)
+    ss.team_df = base.get_project_team(project.project_no, False)
 
 
 def on_save_user_settings():
@@ -52,7 +52,6 @@ def on_save_user_settings():
 
     settings = ss.user_settings
     settings.smooth_irl = int(ss.smooth_irl)
-    settings.plot_target_levels = int(ss.plot_target_levels)
     settings.filter_on_user = int(ss.filter_on_user)
     settings.remember_project = int(ss.remember_project)
     settings.ascending_irl = int(ss.ascending_irl)
@@ -82,6 +81,62 @@ def on_save_system_settings():
     base.update_license_values(edited_rows)
 
 
+def on_add_organisation():
+    """
+    Add organisations to the database.
+    Optionally also adds faculties if present in the UI.
+
+    Returns
+    -------
+    None.
+
+    """
+    org = ss.new_org
+    org_id = base.add_org(org)
+
+    for faculty in ss.new_fac.split("\n"):
+
+        base.add_fac(org_id, faculty)
+
+    ss.new_org = None
+    ss.new_fac = None
+
+
+def on_add_faculties():
+    """
+    Adds faculties to an existing organisation.
+
+    Returns
+    -------
+    None.
+
+    """
+    org_id = ss.select_org.org_id
+
+    for fac in ss.new_facs.split("\n"):
+
+        base.add_fac(org_id, fac)
+
+    ss.new_facs = None
+
+
+def on_add_departments():
+    """
+    Returns
+    -------
+    None.
+
+    """
+
+    fac_id = ss.select_fac.fac_id
+
+    for dep in ss.new_deps.split("\n"):
+
+        base.add_dep(fac_id, dep)
+
+    ss.new_deps = None
+
+
 def on_add_new_project():
     """
     Event handler for adding new projects to the database.
@@ -92,7 +147,6 @@ def on_add_new_project():
 
     """
 
-    # TODO: Ensure refresh of projects!!!!
     project_no = ss.new_project_no
     project_name = ss.new_project_name
     project_members = ss.new_project_members
@@ -252,8 +306,9 @@ def main():
         if user.rights == 9:
 
             st.divider()
-            ui.add_organisation()
-            ui.add_departments()
+            ui.add_organisation(on_add_organisation)
+            ui.add_faculties(on_add_faculties)
+            ui.add_departments(on_add_departments)
 
     if user.rights == 9:
 

@@ -93,12 +93,10 @@ def main():
         grid[row][col].markdown(header, unsafe_allow_html=True)
         project_no = project.project_no
         smooth = ss.user_settings.smooth_irl
-        plot_targets = ss.user_settings.plot_target_levels
         dark_mode = ss.user_settings.dark_mode
 
         irl_plot = data_viz.plot_irl(project,
                                      smooth,
-                                     plot_targets,
                                      dark_mode)
 
         with grid[row+1][col]:
@@ -108,11 +106,11 @@ def main():
 
             if ss.user_settings.ap_table_view:
 
-                ui.show_action_points(project)
+                ui.show_action_points_table(project)
 
             else:
 
-                ui.make_action_points(prefix, project, None)
+                ui.show_action_points(prefix, project, None)
 
             if ss.user.org_id == ss.system_settings.owner_org_id:
 

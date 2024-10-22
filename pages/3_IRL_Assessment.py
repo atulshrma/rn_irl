@@ -28,6 +28,29 @@ import utils
 from streamlit import session_state as ss
 
 
+@st.dialog("You have incomplete action points!")
+def override_dlg():
+    label = "Not all action points defined to increase the IRL are complete.  \n"
+    label += "What do you want to do with these action points?"
+    action = st.radio(label, ["Keep unfinished action points",
+                              "Discard all action points"])
+    cols = st.columns(2)
+
+    with cols[0]:
+
+        if st.button("Save assessment"):
+
+            ss.keep_ass = (action == "Keep unfinished action points")
+            st.rerun()
+
+    with cols[1]:
+
+        if st.button("Cancel"):
+
+            st.keep_ass = None
+            st.rerun()
+
+
 def history_formatter(revision):
 
     return revision.assessment_date
@@ -47,19 +70,102 @@ def on_IRL_val_changed():
     ss.project.frl = ss.frl
 
 
-def on_IRL_target_val_changed():
+def on_IRL_ap_changed():
     """
-    Callback used for all IRL Target Level selectors.
-    Updates target level values in the session.
-    Does not save these values to the database.
-    """
+    Callback used for updating IRL targets and action points.
 
+    Returns
+    -------
+    None.
+
+    """
+    # Just update these values for now.
+    ss.project.plot_targets = int(ss.ass_plot_targets)
+    ss.project.crl_notes = ss.ass_crl_notes
+    ss.project.trl_notes = ss.ass_trl_notes
+    ss.project.brl_notes = ss.ass_brl_notes
+    ss.project.iprl_notes = ss.ass_iprl_notes
+    ss.project.tmrl_notes = ss.ass_tmrl_notes
+    ss.project.frl_notes = ss.ass_frl_notes
     ss.project.crl_target = ss.ass_crl_target
     ss.project.trl_target = ss.ass_trl_target
     ss.project.brl_target = ss.ass_brl_target
     ss.project.iprl_target = ss.ass_iprl_target
     ss.project.tmrl_target = ss.ass_tmrl_target
     ss.project.frl_target = ss.ass_frl_target
+    ss.project.crl_target_lead = ss.ass_crl_target_lead
+    ss.project.trl_target_lead = ss.ass_trl_target_lead
+    ss.project.brl_target_lead = ss.ass_brl_target_lead
+    ss.project.iprl_target_lead = ss.ass_iprl_target_lead
+    ss.project.tmrl_target_lead = ss.ass_tmrl_target_lead
+    ss.project.frl_target_lead = ss.ass_frl_target_lead
+    ss.project.crl_target_duedate = ss.ass_crl_duedate
+    ss.project.trl_target_duedate = ss.ass_trl_duedate
+    ss.project.brl_target_duedate = ss.ass_brl_duedate
+    ss.project.iprl_target_duedate = ss.ass_iprl_duedate
+    ss.project.tmrl_target_duedate = ss.ass_tmrl_duedate
+    ss.project.frl_target_duedate = ss.ass_frl_duedate
+    ss.project.update(True)
+
+    for irl in ['CRL', 'TRL', 'BRL', 'IPRL', 'TMRL', 'FRL']:
+
+        aps_changes = ss.get("ass_%s_aps" % irl.lower())
+        ap_df = ss.get("ass_%s_df" % irl.lower())
+        edited_rows = aps_changes["edited_rows"]
+        added_rows = aps_changes["added_rows"]
+
+        for row in edited_rows:
+
+            ap_id = int(ap_df.at[row, "ap_id"])
+            ap = base.get_ap(ap_id)
+
+            for attr, val in edited_rows[row].items():
+
+                if attr == "username":
+
+                    attr = "responsible"
+                    val = base.get_user_id(val)
+
+                if attr == "progress":
+
+                    val = int(val)
+
+                if attr == "due_date":
+
+                    val = val[:10]
+
+                setattr(ap, attr, val)
+
+            ap.update()
+            # Need to delete the action point to avoid an error message later.
+            del ap
+
+        for row in added_rows:
+
+            ap = base.ActionPoint()
+            ap.assessment_id = ss.project.id
+            ap.irl_type = irl
+
+            for attr, val in row.items():
+
+                if attr == "username":
+
+                    attr = "responsible"
+                    val = base.get_user_id(val)
+
+                if attr == "progress":
+
+                    val = int(val)
+
+                if attr == "due_date":
+
+                    val = val[:10]
+
+                setattr(ap, attr, val)
+
+            ap.insert()
+
+    ss.refresh = True
 
 
 def on_history_changed():
@@ -94,6 +200,7 @@ def on_save_assessment():
     Save updated assessment values to database.
     """
     irl_ass = ss.project
+    old_ass_id = irl_ass.id
 
     # Update all values from UI values.
     irl_ass.crl = ss.crl
@@ -102,34 +209,16 @@ def on_save_assessment():
     irl_ass.iprl = ss.iprl
     irl_ass.tmrl = ss.tmrl
     irl_ass.frl = ss.frl
-    irl_ass.crl_notes = ss.ass_crl_notes
-    irl_ass.trl_notes = ss.ass_trl_notes
-    irl_ass.brl_notes = ss.ass_brl_notes
-    irl_ass.iprl_notes = ss.ass_iprl_notes
-    irl_ass.tmrl_notes = ss.ass_tmrl_notes
-    irl_ass.frl_notes = ss.ass_frl_notes
-    irl_ass.crl_target = ss.ass_crl_target
-    irl_ass.trl_target = ss.ass_trl_target
-    irl_ass.brl_target = ss.ass_brl_target
-    irl_ass.iprl_target = ss.ass_iprl_target
-    irl_ass.tmrl_target = ss.ass_tmrl_target
-    irl_ass.frl_target = ss.ass_frl_target
-    irl_ass.crl_target_lead = ss.ass_crl_target_lead
-    irl_ass.trl_target_lead = ss.ass_trl_target_lead
-    irl_ass.brl_target_lead = ss.ass_brl_target_lead
-    irl_ass.iprl_target_lead = ss.ass_iprl_target_lead
-    irl_ass.tmrl_target_lead = ss.ass_tmrl_target_lead
-    irl_ass.frl_target_lead = ss.ass_frl_target_lead
-    irl_ass.crl_target_duedate = ss.ass_crl_duedate
-    irl_ass.trl_target_duedate = ss.ass_trl_duedate
-    irl_ass.brl_target_duedate = ss.ass_brl_duedate
-    irl_ass.iprl_target_duedate = ss.ass_iprl_duedate
-    irl_ass.tmrl_target_duedate = ss.ass_tmrl_duedate
-    irl_ass.frl_target_duedate = ss.ass_frl_duedate
 
     # ...and save to database...
     irl_ass.update()
     ss.refresh = True
+
+    if ss.keep_ass:
+
+        base.copy_aps(old_ass_id, irl_ass.id)
+
+    ss.keep_ass = None
 
 
 def assessment_view(project, read_only=False):
@@ -196,40 +285,67 @@ def assessment_view(project, read_only=False):
 
     with col1:
 
-        header = "<h3 style='text-align: center;'>Innovation Readiness Level<br>%s</h3>"
-        st.markdown(header % project, unsafe_allow_html=True)
+        plot_h = "Visualization"
+        target_h = "Targets and action points per %s:"
+        target_h = target_h % project.assessment_date
+        # plot, targets = st.tabs(["Plot", "Targets and Action Points"])
+        plot, targets = st.tabs([plot_h, target_h])
 
-        if project is not None:
+        with plot:
 
-            smooth = ss.user_settings.smooth_irl
-            plot_targets = ss.user_settings.plot_target_levels
-            dark_mode = ss.user_settings.dark_mode
-            fig = data_viz.plot_irl(project,
-                                    smooth,
-                                    plot_targets,
-                                    dark_mode)
-            st.pyplot(fig)
+            header = "<h3 style='text-align: center;'>Innovation Readiness Level<br>%s</h3>"
+            st.markdown(header % project, unsafe_allow_html=True)
+
+            if project is not None:
+
+                smooth = ss.user_settings.smooth_irl
+                dark_mode = ss.user_settings.dark_mode
+                fig = data_viz.plot_irl(project,
+                                        smooth,
+                                        dark_mode)
+                st.pyplot(fig)
+
+        with targets:
 
             # Target levels and notes.
             if read_only:
 
-                ui.make_action_points('ass', project, None)
+                ui.show_action_points('ass', project, None)
 
             else:
 
                 ui.make_action_points('ass',
                                       project,
-                                      on_IRL_target_val_changed)
+                                      on_IRL_ap_changed)
 
-            st.button("Save assessment",
-                      on_click=on_save_assessment,
-                      key='trl_action_points',
-                      disabled=read_only)
+            ass_changed = base.irl_ass_changed(project)
 
+            if not read_only:
+
+                read_only = not ass_changed
     # Set up all the descriptions and tables.
     with col2:
 
-        ui.irl_explainer()
+        con = st.container(border=False)
+
+        with con:
+
+            ui.irl_explainer()
+
+    if st.button("Save assessment", key='save_ass', disabled=read_only):
+
+        # Check for incomplete action points.
+        ap_complete = base.ap_completed(project.id)
+
+        if not ap_complete:
+
+            override_dlg()
+
+        keep_ass = ss.get("keep_ass", None)
+
+        if ap_complete or keep_ass:
+
+            on_save_assessment()
 
 
 def history_view(project):
@@ -291,23 +407,21 @@ def history_view(project):
 
             smooth = ss.user_settings.smooth_irl
             dark_mode = ss.user_settings.dark_mode
-            plot_targets = ss.user_settings.plot_target_levels
             fig = data_viz.plot_irl(revision,
                                     smooth,
-                                    plot_targets,
-                                    dark_mode)
+                                    dark_mode,
+                                    True)
             st.pyplot(fig)
 
         # Set up all the descriptions and tables.
         with col2:
 
-            ui.show_action_points(revision, None)
+            ui.show_action_points_table(revision, None)
 
 
 def progress_view(project):
     """
     Displays the delta between two revisions of a project.
-
     Parameters
     ----------
     project : TYPE
@@ -344,7 +458,7 @@ def progress_view(project):
         r0 = ss.project_history[r0_index]
         r1 = ss.project_history[r1_index]
 
-    if r0 != r1:
+    if no_options > 1:
 
         st.sidebar.select_slider(
             "Select revisions to view progress between",
