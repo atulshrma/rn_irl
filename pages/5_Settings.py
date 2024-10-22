@@ -188,6 +188,7 @@ def on_add_new_project():
     project.iprl_target = 1
     project.tmrl_target = 1
     project.frl_target = 1
+    project.active = 1
     proj_error = project.insert()
     team_error = base.add_project_team(project_no, project_members)
     ss.refresh = True
@@ -287,8 +288,11 @@ def main():
             ui.edit_project_team(users,
                                  on_project_team_edit_change,
                                  on_apply_project_team_changes)
-            st.divider()
-            ui.change_project_status(user)
+
+            if user.rights >= 3:
+
+                st.divider()
+                ui.change_project_status(user)
 
     admin_tools = st.expander("Admin tools")
 
