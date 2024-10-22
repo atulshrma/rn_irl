@@ -1397,7 +1397,7 @@ def edit_project_team(users, edit_cb, team_change_cb):
                   on_click=team_change_cb)
 
 
-def change_project_status():
+def change_project_status(user):
 
     with st.form("change_project_status", border=False):
 
@@ -1405,9 +1405,8 @@ def change_project_status():
 
         with de:
 
-            st.subheader("Deactivate project(s):")
-            active_projs = base.get_users()
-            active_projs = [proj.project_no for proj in active_projs]
+            st.subheader("Change project status")
+            active_projs = base.get_projects(user.user_id, True)
             st.multiselect("Select projects to deactivate",
                            active_projs,
                            placeholder="Select projects",
@@ -1416,50 +1415,49 @@ def change_project_status():
         with re:
 
             st.subheader("Reactivate project(s):")
-            inactive_projs = base.get_projects(False)
-            inactive_projs = [proj.project_no for proj in inactive_projs]
+            inactive_projs = base.get_projects(user.user_id, False)
             st.multiselect("Select projects to reactivate",
                            inactive_projs,
                            placeholder="Select projects",
-                           key="reactivate_projs")
+                           key="reactivate_projects")
 
-        change_user_status = st.form_submit_button("Update user status")
+        change_proj_status = st.form_submit_button("Update project status")
 
-        if change_user_status:
+        if change_proj_status:
 
             des, res = st.columns(2)
 
-            if len(ss.deactivate_users) > 0:
+            if len(ss.deactivate_projects) > 0:
 
-                success = base.change_user_status(
-                    ss.deactivate_users,
+                success = base.change_project_status(
+                    ss.deactivate_projects,
                     False)
 
                 with des:
 
                     if success:
 
-                        st.success("Selected user(s) detctivated!")
+                        st.success("Selected project(s) detctivated!")
 
                     else:
 
-                        st.error("Could not deactivate user(s)!")
+                        st.error("Could not deactivate project(s)!")
 
-            if len(ss.reactivate_users) > 0:
+            if len(ss.reactivate_projects) > 0:
 
-                success = base.change_user_status(
-                    ss.reactivate_users,
+                success = base.change_project_status(
+                    ss.reactivate_projects,
                     True)
 
                 with res:
 
                     if success:
 
-                        st.success("Selected user(s) reactivated!")
+                        st.success("Selected project(s) reactivated!")
 
                     else:
 
-                        st.error("Could not reactivate user(s)!")
+                        st.error("Could not reactivate project(s)!")
 
             with st.spinner("Updating database..."):
 

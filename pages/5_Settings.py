@@ -287,6 +287,8 @@ def main():
             ui.edit_project_team(users,
                                  on_project_team_edit_change,
                                  on_apply_project_team_changes)
+            st.divider()
+            ui.change_project_status(user)
 
     admin_tools = st.expander("Admin tools")
 

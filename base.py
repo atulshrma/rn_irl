@@ -122,12 +122,13 @@ class IRLAssessment(Base, SerializerMixin):
     tmrl_target_duedate = Column(Text(10))
     frl_target_duedate = Column(Text(10))
     plot_targets = Column(Integer)
+    active = Column(Integer)
 
     def __str__(self):
-        return str(self.project_no) + " " + self.project_name
+        return str(self.project_no) + " " + str(self.project_name)
 
     def __repr__(self):
-        return str(self.project_no) + " " + self.project_name
+        return str(self.project_no) + " " + str(self.project_name)
 
     def _getDate(self):
         """
@@ -336,6 +337,7 @@ class IRLAssessment(Base, SerializerMixin):
             new_irl.tmrl_target_duedate = self.tmrl_target_duedate
             new_irl.frl_target_duedate = self.frl_target_duedate
             new_irl.plot_targets = self.plot_targets
+            new_irl.active = self.active
 
             session.add(new_irl)
 
@@ -1153,7 +1155,51 @@ Project methods.
 """
 
 
-def get_projects(user_id=None):
+def change_project_status(projects, active):
+    """
+    Change project status.
+
+    Parameters
+    ----------
+    users : list of IRLAssessment
+        List of projects to update.
+    active : bool
+        Set project active status.
+        We don't delete projects for historical resasons.
+
+    Returns
+    -------
+    bool
+        True if change was successful, false if not.
+
+    """
+
+    active = int(active)
+    engine = create_engine(st.secrets.db_details.db_path)
+    Base.metadata.create_all(bind=engine)
+    Session = sessionmaker(bind=engine)
+    session = Session()
+    project_nos = [p.project_no for p in projects]
+
+    try:
+
+        session.query(IRLAssessment).filter(
+            IRLAssessment.project_no.in_(
+                project_nos)).update({'active': active})
+        success = True
+
+    except BaseException:
+
+        success = False
+
+    session.commit()
+    session.close()
+    engine.dispose()
+
+    return success
+
+
+def get_projects(user_id=None, active=True):
     """
     Get IRL assessments for all projects.
     If user is specified, returns only projects where the specified user is
@@ -1164,12 +1210,14 @@ def get_projects(user_id=None):
     Base.metadata.create_all(bind=engine)
     Session = sessionmaker(bind=engine)
     session = Session()
+    active = int(active)
 
     if user_id is None:
 
         irl_data = session.query(IRLAssessment).order_by(
             func.max(IRLAssessment.assessment_date)).group_by(
-                IRLAssessment.project_no).all()
+                IRLAssessment.project_no).where(
+                    IRLAssessment.active == active).all()
 
     else:
 
@@ -1178,7 +1226,8 @@ def get_projects(user_id=None):
                 IRLAssessment.project_no).filter(
                     (ProjectTeam.user_id == user_id) &
                     (ProjectTeam.active == 1) &
-                    (IRLAssessment.project_no == ProjectTeam.project_id)).all()
+                    (IRLAssessment.project_no == ProjectTeam.project_id) &
+                    (IRLAssessment.active == active)).all()
 
     session.close()
     engine.dispose()
