@@ -57,12 +57,13 @@ def dbdates2datetimes(date_list):
     return datetimes
 
 
-def get_IRL_data(user_id=None):
+def get_IRL_data(user):
 
     # Fetch from database only when and if we need to do so.
     if ss.get("refresh", True):
 
-        ss.projects = base.get_projects(user_id)
+        filt = ss.user_settings.filter_on_user
+        ss.projects = base.get_projects(user, filt)
         ss.refresh = False
 
 

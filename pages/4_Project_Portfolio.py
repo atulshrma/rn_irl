@@ -38,14 +38,7 @@ irl_labels = ['Customer Readiness Level',
 
 def main():
 
-    if ss.user_settings.filter_on_user:
-
-        user = ss['user'].username
-
-    else:
-
-        user = None
-
+    user = ss.user
     utils.get_IRL_data(user)
 
     portfolio = st.sidebar.multiselect("Select your portfolio",

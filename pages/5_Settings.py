@@ -58,6 +58,7 @@ def on_save_user_settings():
     settings.dark_mode = int(ss.dark_mode)
     settings.ap_table_view = int(ss.ap_table_view)
     settings.update()
+    ss.refresh = True
 
 
 def on_save_system_settings():
@@ -155,6 +156,11 @@ def on_add_new_project():
     if not project_no.isdigit():
 
         ss.add_new_project_status = 2
+        return
+
+    if base.is_project(project_no):
+
+        ss.add_new_project_status = 6
         return
 
     if not project_name.isascii():

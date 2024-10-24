@@ -119,7 +119,7 @@ def on_init_system():
         ss.user = user
         ss.user_settings = base.get_user_settings(user.user_id)
         ss.dark_mode = ss.user_settings.dark_mode
-        ss.projects = base.get_projects(user.user_id)
+        ss.projects = base.get_projects(user)
         ss['go_to_page'] = 'pages/5_Settings.py'
         ss.refresh = False
 
@@ -707,7 +707,7 @@ def add_user():
 
     elif status == 2:
 
-        st.error("User name already exists!")
+        st.error("User already exists!")
 
 
 def init_system():
@@ -1294,6 +1294,10 @@ def add_new_project(users, handler):
 
         st.error("You must select a project leader!")
 
+    if status == 6:
+
+        st.error("Project already exists!")
+
     if status == 1:
 
         st.success("Project successfully added!")
@@ -1402,11 +1406,12 @@ def change_project_status(user):
     with st.form("change_project_status", border=False):
 
         de, re = st.columns(2)
+        filt = ss.user_settings.filter_on_user
 
         with de:
 
             st.subheader("Change project status")
-            active_projs = base.get_projects(user.user_id, True)
+            active_projs = base.get_projects(user, filt, True)
             st.multiselect("Select projects to deactivate",
                            active_projs,
                            placeholder="Select projects",
@@ -1415,7 +1420,7 @@ def change_project_status(user):
         with re:
 
             st.subheader("Reactivate project(s):")
-            inactive_projs = base.get_projects(user.user_id, False)
+            inactive_projs = base.get_projects(user, filt, False)
             st.multiselect("Select projects to reactivate",
                            inactive_projs,
                            placeholder="Select projects",

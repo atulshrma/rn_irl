@@ -71,7 +71,7 @@ def checkPwd():
         ss.user = user
         ss.user_settings = base.get_user_settings(user.user_id)
         ss.dark_mode = ss.user_settings.dark_mode
-        ss.projects = base.get_projects(user.user_id)
+        ss.projects = base.get_projects(user)
         ss.refresh = False
 
     # Safety measures.

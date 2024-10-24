@@ -500,18 +500,10 @@ def progress_view(project):
 
 def main():
 
-    # TODO: Refresh data when user settings changed.
-    # Filter on user. Or not.
-    if ss.user_settings.filter_on_user:
-
-        user_id = ss.user.user_id
-
-    else:
-
-        user_id = None
+    user = ss.user
 
     # Disable all submissions if user is only allowed to read.
-    utils.get_IRL_data(user_id)
+    utils.get_IRL_data(user)
 
     # Select the last used project initially.
     index = 0

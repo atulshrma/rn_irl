@@ -889,21 +889,40 @@ def add_user(new_user, password):
         return new_user
 
 
-def get_users(active=True):
+def get_users(active=True, org_id=None):
     """
-    Get a list of all users in the database.
+    Fetch a list of users from the database.
+
+    Parameters
+    ----------
+    active : TYPE, optional
+        DESCRIPTION. The default is True.
+    org_id : Integer, optional
+        If not None, returns only users belonging to the organisation with the
+        given org_id. The default is None.
 
     Returns
     -------
-    users : TYPE
+    users : List of User
         DESCRIPTION.
 
     """
+    active = int(active)
     engine = create_engine(st.secrets.db_details.db_path)
     Base.metadata.create_all(bind=engine)
     Session = sessionmaker(bind=engine)
     session = Session()
-    users = session.query(User).filter(User.active == int(active)).all()
+
+    if org_id is None:
+
+        users = session.query(User).filter(User.active == int(active)).all()
+
+    else:
+
+        users = session.query(User).filter(
+            (User.active == active) &
+            (User.org_id == org_id)).all()
+
     session.close()
     engine.dispose()
 
@@ -1199,11 +1218,32 @@ def change_project_status(projects, active):
     return success
 
 
-def get_projects(user_id=None, active=True):
+def get_projects(user, filt=True, active=True):
     """
-    Get IRL assessments for all projects.
-    If user is specified, returns only projects where the specified user is
-    an active part of the project team.
+    Fetch IRL data from the database.
+    
+
+    Parameters
+    ----------
+    user : User
+        The current user.
+    filt : Bool, optional
+        If True, will only display the projects the user is project leader on.
+        If False, will display all projects where the user is part of the
+        project team for access levels 0-3.
+        For access level 8 (SuperUser) all projects for this SuperUser's
+        organisation will be returned.
+        For access level 9 (Administrator), all projects will be returned.
+        The default is True.
+    active : Bool, optional
+        If True, returns only active projects.
+        If False, returns only inactive projects.
+        The default is True.
+
+    Returns
+    -------
+    List of IRLData objects.
+
     """
 
     engine = create_engine(st.secrets.db_details.db_path)
@@ -1212,22 +1252,42 @@ def get_projects(user_id=None, active=True):
     session = Session()
     active = int(active)
 
-    if user_id is None:
-
-        irl_data = session.query(IRLAssessment).order_by(
-            func.max(IRLAssessment.assessment_date)).group_by(
-                IRLAssessment.project_no).where(
-                    IRLAssessment.active == active).all()
-
-    else:
+    if filt:
 
         irl_data = session.query(IRLAssessment).order_by(
             func.max(IRLAssessment.assessment_date)).group_by(
                 IRLAssessment.project_no).filter(
-                    (ProjectTeam.user_id == user_id) &
-                    (ProjectTeam.active == 1) &
-                    (IRLAssessment.project_no == ProjectTeam.project_id) &
+                    (IRLAssessment.project_leader_id == user.user_id) &
                     (IRLAssessment.active == active)).all()
+
+    else:
+
+        if user.rights == 9:
+
+            irl_data = session.query(IRLAssessment).order_by(
+                func.max(IRLAssessment.assessment_date)).group_by(
+                    IRLAssessment.project_no).where(
+                        IRLAssessment.active == active).all()
+
+        elif user.rights == 8:
+
+            users = get_users(True, org_id=user.org_id)
+            user_ids = [user.user_id for user in users]
+            irl_data = session.query(IRLAssessment).order_by(
+                func.max(IRLAssessment.assessment_date)).group_by(
+                    IRLAssessment.project_no).filter(
+                        (IRLAssessment.project_leader_id.in_(user_ids) &
+                            (IRLAssessment.active == active))).all()
+
+        elif user.rights <= 3:
+
+            irl_data = session.query(IRLAssessment).order_by(
+                func.max(IRLAssessment.assessment_date)).group_by(
+                    IRLAssessment.project_no).filter(
+                        (ProjectTeam.user_id == user.user_id) &
+                        (ProjectTeam.active == 1) &
+                        (IRLAssessment.project_no == ProjectTeam.project_id) &
+                        (IRLAssessment.active == active)).all()
 
     session.close()
     engine.dispose()
@@ -1269,7 +1329,13 @@ def get_project_rights(project_id, user_id):
     session.close()
     engine.dispose()
 
-    return rights.project_rights
+    if rights is None:
+
+        return 1
+
+    else:
+
+        return rights.project_rights
 
 
 def get_project_team(project_id, active=True):
@@ -1332,6 +1398,26 @@ def get_project_team(project_id, active=True):
     engine.dispose()
 
     return team_df
+
+
+def is_project(project_no):
+
+    engine = create_engine(st.secrets.db_details.db_path)
+    Base.metadata.create_all(bind=engine)
+    Session = sessionmaker(bind=engine)
+    session = Session()
+    exists = session.query(IRLAssessment.filter_by(
+        project_no=project_no).first())
+    session.close()
+    engine.dispose()
+
+    if exists:
+
+        return True
+
+    else:
+
+        return False
 
 
 def get_orgs():
