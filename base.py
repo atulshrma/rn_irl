@@ -1763,7 +1763,7 @@ def ap_completed(irl_ass_id):
     session.close()
     engine.dispose()
 
-    completed = (len(aps)*100 == completion)
+    completed = (len(aps)*100 == completion) or (len(aps) == 0)
 
     return completed
 

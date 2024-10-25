@@ -1406,8 +1406,8 @@ def is_project(project_no):
     Base.metadata.create_all(bind=engine)
     Session = sessionmaker(bind=engine)
     session = Session()
-    exists = session.query(IRLAssessment.filter_by(
-        project_no=project_no).first())
+    exists = session.query(IRLAssessment).filter_by(
+        project_no=project_no).first()
     session.close()
     engine.dispose()
 
