@@ -214,7 +214,10 @@ def on_save_assessment():
     irl_ass.update()
     ss.refresh = True
 
-    if ss.keep_ass:
+    # Keep action points if applicable.
+    keep_ass = ss.get('keep_ass', False)
+ 
+    if keep_ass:
 
         base.copy_aps(old_ass_id, irl_ass.id)
 
