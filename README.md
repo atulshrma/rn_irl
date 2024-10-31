@@ -9,5 +9,63 @@ We recommend that you deploy this on an internal server.
 A tutotorial on how to do this with a custom domain in Apache2 can be found here:
 https://q-viper.github.io/2022/07/17/deploying-streamlit-app-with-custom-domain-in-apache2/
 
+I've made a quick guide and some helpers for getting this up and running on Linux server below. 
+Note that this is only tested on Ubuntu 24.04 LTS, so if you're running something else YMMW.
+
+RN IRL Setup Guide
+
+# Install some basics.
+apt install sqlite3
+apt install python3-venv
+
+# Create a group for users that need access to rn_irl folders without root access:
+# (This is optional, but probably good practice if you want to restrict root access)
+sudo groupadd -gid 99 rn_irl
+
+# Get the source code - doesn't matter where you place it at this time.
+github clone https://github.com/NTNU-TTO/rn_irl
+sudo chown root:rn_irl -R rn_irl
+
+# Set up a persistent python environment to run in.
+cd /etc
+sudo python -m venv rn_irl
+sudo chown root:rn_irl -R rn_irl
+
+# Activate the virtual python environment.
+source /etc/rn_irl/bin/activate
+
+# Install required modules.
+pip install streamlit
+pip install bcrypt
+pip install numpy
+pip install scipy
+pip install matplotlib
+pip install sqlalchemy
+
+# Move the source code inside the virtual python environment.
+mv /path/to/your/local/github/clone/rn_irl /etc/rn_irl/bin
+
+# Make the database persistent outside of the rn_irl environment
+sudo mkdir /var/lib/rn_irl
+sudo mv /etc/rn_irl/bin/rn_irl/irl.db /var/lib/rn_irl
+
+# Edit secrets.toml and update the path to the database:
+{db_details]
+db_path = 'sqlite:////var//lib//rn_irl//irl.db
+
+# Create symlink bash script:
+sudo ln -s /etc/rn_irl/bin/rn_irl/ubuntu_helpers/rn_irl.sh /bin/rn_irl
+
+# Copy service
+sudo cp /etc/rn_irl/bin/rn_irl/ubuntu_helpers/rn_irl.service /lib/systemd/system/
+
+# Reload, enable and run service
+sudo systemctl daemon-reload
+sudo systemctl enable rn_irl
+sudo service rn_irl start
+
+# Enjoy.
+
 You are free to implement any changes you like to the source code to tailor it to your own and/or your organisations need.
 The source code is provided as is with absolutely no guarantees that it is useful or fit for purpose.
+
