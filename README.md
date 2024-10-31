@@ -18,8 +18,7 @@ RN IRL Setup Guide
 apt install sqlite3
 apt install python3-venv
 
-# Create a group for users that need access to rn_irl folders without root access:
-# (This is optional, but probably good practice if you want to restrict root access)
+# Create a group for users that need access to rn_irl folders without root access (this is optional, but probably good practice if you want to restrict root access):
 sudo groupadd -gid 99 rn_irl
 
 # Get the source code - doesn't matter where you place it at this time.
